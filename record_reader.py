@@ -5,26 +5,6 @@ from collections import namedtuple
 import specs
 
 
-class PDBDataType:
-    """A class to convert PDB datatypes to python datatypes
-
-    This class does simple mapping between the datatypes described in PDB specs and
-    python datatypes, such as:
-
-        Char      -> str
-        Real(6,3) -> float
-        Integer   -> int
-    """
-
-    dtype_map = ((int, "integer"), (float, "real"))
-
-    @classmethod
-    def get_dtype(cls, string):
-        for python_type, pdb_type in cls.dtype_map:
-            if pdb_type in string:
-                return python_type
-        return str
-
 
 @dataclasses.dataclass
 class FieldReader:
@@ -61,7 +41,14 @@ class FieldReader:
             return self.dtype(frag)
 
         return 0
-
+    
+    @staticmethod
+    def get_dtype(raw_dtype):
+        dtype_map = ((int, "integer"), (float, "real"))
+         for python_type, pdb_type in dtype_map:
+            if pdb_type in raw_dtype:
+                return python_type
+        return str
 
 class RecordReader:
     """Parses a PDB record into a namedtuple.
@@ -136,7 +123,7 @@ class RecordReader:
                 end = start
 
             # Get data type of the field
-            dtype = PDBDataType.get_dtype(pdb_type)
+            dtype = FieldReader.get_dtype(pdb_type)
 
             fields.append(FieldReader(field, start - 1, end, dtype))
 
