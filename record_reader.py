@@ -5,27 +5,6 @@ from collections import namedtuple
 import specs
 
 
-class PDBDataType:
-    """A class to convert PDB datatypes to python datatypes
-
-    This class does simple mapping between the datatypes described in PDB specs and
-    python datatypes, such as:
-
-        Char      -> str
-        Real(6,3) -> float
-        Integer   -> int
-    """
-
-    dtype_map = ((int, "integer"), (float, "real"))
-
-    @classmethod
-    def get_dtype(cls, string):
-        for python_type, pdb_type in cls.dtype_map:
-            if pdb_type in string:
-                return python_type
-        return str
-
-
 @dataclasses.dataclass
 class FieldReader:
     """A reader for PDB fields.
@@ -62,6 +41,38 @@ class FieldReader:
 
         return 0
 
+    @staticmethod
+    def get_dtype(raw_dtype):
+        dtype_map = ((int, "integer"), (float, "real"))
+        for python_type, pdb_type in dtype_map:
+            if pdb_type in raw_dtype:
+                return python_type
+        return str
+
+    @classmethod
+    def from_pdb_description(cls, specline):
+        """An alternative constructor for FieldReader class.
+
+        This parses PDB record specifications; creates FieldReaders
+        """
+
+        def normalize_fragment(fragment):
+            """Removes characters that are illegal to use in python variables."""
+            chars_to_remove = re.compile(r"['\",:.[\](){} ]")
+            return chars_to_remove.sub("", fragment).lower()
+
+        # Normalize each fragment
+        start_end, raw_dtype, name, *_ = [
+            normalize_fragment(frag) for frag in specline.split("\t")
+        ]
+
+        start, *end = start_end.split("-")
+        start = int(start)
+        end = int(end[0] if end else start)
+        dtype = cls.get_dtype(raw_dtype)
+
+        return FieldReader(name, start, end, dtype)
+
 
 class RecordReader:
     """Parses a PDB record into a namedtuple.
@@ -96,64 +107,26 @@ class RecordReader:
         self.fields = fields[1:]
 
         # Create a container for fields.
-        self.container = namedtuple(
-            self.name,
-            [f.name for f in fields[1:]],
-        )
-
-    @classmethod
-    def from_pdb_description(cls, text):
-        """An alternative constructor for RecordReader class.
-
-        This parses PDB record specifications; creates FieldReaders and container
-        that is appropriate for that specification.
-        """
-        all_lines = (line.strip() for line in text.splitlines())
-
-        # Drop empty lines
-        lines = (line for line in all_lines if line)
-
-        def normalize_fragment(fragment):
-            """Removes characters that are illegal to use in python variables."""
-            chars_to_remove = re.compile(r"['\",:.[\](){} ]")
-            return chars_to_remove.sub("", fragment).lower()
-
-        # Then split each line, and normalize each fragment
-        splitted_lines = (
-            [normalize_fragment(frag) for frag in line.split("\t")] for line in lines
-        )
-
-        # Now create field readers
-        fields = []
-        for start_end, pdb_type, field, *_ in splitted_lines:
-
-            if "-" in start_end:
-                # Parse instances like: 1 - 6
-                start, end = [int(num) for num in start_end.split("-")]
-            else:
-                # Parse instance like: 17
-                start = int(start_end)
-                end = start
-
-            # Get data type of the field
-            dtype = PDBDataType.get_dtype(pdb_type)
-
-            fields.append(FieldReader(field, start - 1, end, dtype))
-
-        return RecordReader(tuple(fields))
+        self.container = namedtuple(self.name, [f.name for f in self.fields])
 
     def read(self, record):
         parsed_fields = {field.name: field.read(record) for field in self.fields}
 
         return self.container(**parsed_fields)
 
+    @staticmethod
+    def from_pdb_spec(spec):
+        all_lines = (line.strip() for line in spec.splitlines())
+        speclines = (line for line in all_lines if line)
+        fields = [FieldReader.from_pdb_description(specline) for specline in speclines]
+        return RecordReader(fields)
+
     def matches(self, record):
         return record.lower().startswith(self.name.lower())
 
 
 Readers = {
-    key: RecordReader.from_pdb_description(spec)
-    for key, spec in specs.ALL_SPECS.items()
+    key: RecordReader.from_pdb_spec(spec) for key, spec in specs.ALL_SPECS.items()
 }
 
 types = {key: reader.container for key, reader in Readers.items()}
