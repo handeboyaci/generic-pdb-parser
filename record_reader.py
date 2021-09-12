@@ -109,17 +109,17 @@ class RecordReader:
         # Create a container for fields.
         self.container = namedtuple(self.name, [f.name for f in self.fields])
 
-    def read(self, record):
-        parsed_fields = {field.name: field.read(record) for field in self.fields}
-
-        return self.container(**parsed_fields)
-
     @staticmethod
     def from_pdb_spec(spec):
         all_lines = (line.strip() for line in spec.splitlines())
         speclines = (line for line in all_lines if line)
         fields = [FieldReader.from_pdb_description(specline) for specline in speclines]
         return RecordReader(fields)
+
+    def read(self, record):
+        parsed_fields = {field.name: field.read(record) for field in self.fields}
+
+        return self.container(**parsed_fields)
 
     def matches(self, record):
         return record.lower().startswith(self.name.lower())
